@@ -15,12 +15,12 @@ import { useOrders } from "context/OrderContext";
 
 export default function OrdersScreen() {
     // ⭐️ Use the context to get the real, dynamic list of orders
-    const { orders } = useOrders(); 
+    const { orders, isLoading, fetchOrders } = useOrders(); 
     
-    // Filter the orders to only show those actively being delivered
-    // The status text MUST match the status strings defined in OrderContext.tsx
+    // Filter the orders to show active orders (Pending or Delivering)
+    // These are orders that haven't been completed or cancelled yet
     const activeOrders = orders.filter(order => 
-        order.status === "Delivering"
+        order.status === "Pending" || order.status === "Delivering"
     );
 
     // Function to navigate directly to the tracking screen
@@ -31,12 +31,26 @@ export default function OrdersScreen() {
         });
     };
 
+    // Refresh orders when screen is focused
+    const handleRefresh = () => {
+        fetchOrders();
+    };
+
     return (
         <View style={styles.container}>
             {/* Header Bar */}
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>Current Orders</Text>
+                <TouchableOpacity onPress={handleRefresh} style={styles.refreshButton}>
+                    <FontAwesome name="refresh" size={20} color="#DA7807" />
+                </TouchableOpacity>
             </View>
+
+            {isLoading && (
+                <View style={styles.loadingContainer}>
+                    <Text style={styles.loadingText}>Loading orders...</Text>
+                </View>
+            )}
 
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 {activeOrders.map((order) => {
@@ -99,12 +113,26 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
     },
     header: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
         marginBottom: 20,
     },
     headerTitle: {
         fontSize: 30,
         fontWeight: "900",
         color: "#DA7807",
+    },
+    refreshButton: {
+        padding: 10,
+    },
+    loadingContainer: {
+        padding: 20,
+        alignItems: "center",
+    },
+    loadingText: {
+        color: "#DA7807",
+        fontSize: 16,
     },
     scrollContent: {
         paddingBottom: 40,
