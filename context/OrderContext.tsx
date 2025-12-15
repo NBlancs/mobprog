@@ -1,11 +1,20 @@
 // context/OrderContext.tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 import { CartItem as CheckoutItem } from './CartContext';
 
-// Use your local IP address for development
-// Replace with your machine's IP (run `ipconfig` in terminal to find it)
-const API_URL = "http://192.168.1.7:3000";
+// Use localhost for web, your local IP for mobile devices
+// To find your IP: run `ipconfig` in terminal and look for IPv4 Address
+const getApiUrl = () => {
+    if (Platform.OS === 'web') {
+        return "http://localhost:3000";
+    }
+    // Replace with your machine's IP for mobile testing
+    return "http://192.168.1.57:3000";
+};
+
+const API_URL = getApiUrl();
 
 // Define the type for a single Order History entry
 export type Order = {

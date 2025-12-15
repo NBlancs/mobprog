@@ -69,8 +69,8 @@ const orderSchema = new mongoose.Schema({
     }
 }, { timestamps: true });
 
-// Generate unique order ID before saving
-orderSchema.pre('save', function(next) {
+// Generate unique order ID BEFORE validation (so required check passes)
+orderSchema.pre('validate', function(next) {
     if (!this.orderId) {
         const date = new Date();
         const year = date.getFullYear();
