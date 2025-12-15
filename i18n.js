@@ -44,25 +44,40 @@ const languageDetector = {
   type: 'languageDetector',
   async: true,
   detect: async (callback) => {
+    // Avoid using AsyncStorage (and other browser/native APIs) when running
+    // in a Node/CLI environment (expo CLI / metro server). Guard access.
+    const isClient = typeof window !== 'undefined' && typeof navigator !== 'undefined';
+
     try {
-      // 1. Check if the user has a saved preference
-      const storedLang = await AsyncStorage.getItem('user-language');
-      if (storedLang) {
-        return callback(storedLang);
+      if (isClient && AsyncStorage && typeof AsyncStorage.getItem === 'function') {
+        const storedLang = await AsyncStorage.getItem('user-language');
+        if (storedLang) return callback(storedLang);
       }
     } catch (error) {
       console.warn("AsyncStorage Error on detect:", error);
     }
-    
-    // 2. Fallback: Use the device's system language
-    const systemLang = Localization.locale.split('-')[0];
+
+    // Fallback: use device locale when available, otherwise default to 'en'
+    let locale = 'en';
+    try {
+      if (Localization && typeof Localization.locale === 'string') {
+        locale = Localization.locale;
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    const systemLang = String(locale).split('-')[0] || 'en';
     return callback(systemLang);
   },
   init: () => {},
   cacheUserLanguage: async (language) => {
     try {
-      // 3. Save the new language selection
-      await AsyncStorage.setItem('user-language', language);
+      const isClient = typeof window !== 'undefined' && typeof navigator !== 'undefined';
+      if (!isClient) return; // don't attempt to persist during CLI/server execution
+      if (AsyncStorage && typeof AsyncStorage.setItem === 'function') {
+        await AsyncStorage.setItem('user-language', language);
+      }
     } catch (error) {
       console.warn("AsyncStorage Error on cache:", error);
     }

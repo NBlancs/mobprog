@@ -1,12 +1,6 @@
-import { useEffect } from "react";
-import { useRouter } from "expo-router";
+import { Redirect } from "expo-router";
 
 export default function Index() {
-  const router = useRouter();
-
-  useEffect(() => {
-    // Redirect to the home tab when the app starts
-    router.replace("/(tabs)/home");
-  }, []);
-  return null;
+  // Use the Redirect component which is safe during initial mount
+  return <Redirect href="/(tabs)/home" />;
 }

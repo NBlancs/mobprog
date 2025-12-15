@@ -1,16 +1,28 @@
 // context/OrderContext.tsx
-import { createContext, ReactNode, useContext, useState } from 'react';
-import { CartItem as CheckoutItem } from './CartContext'; // Use the CartItem type from your CartContext
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
+import { CartItem as CheckoutItem } from './CartContext';
+
+// Use your local IP address for development
+// Replace with your machine's IP (run `ipconfig` in terminal to find it)
+const API_URL = "http://192.168.1.7:3000";
 
 // Define the type for a single Order History entry
 export type Order = {
     id: string;
+    _id?: string;
     date: string;
-    status: 'Delivering' | 'Delivered' | 'Cancelled'; // Simplified status for history
+    status: 'Pending' | 'Delivering' | 'Delivered' | 'Cancelled';
     total: number;
     items: OrderItemSummary[];
     icon: string;
     color: string;
+    deliveryAddress?: {
+        street?: string;
+        city?: string;
+        province?: string;
+    };
+    paymentMethod?: string;
 };
 
 // Simplified item structure for the history summary
@@ -23,112 +35,224 @@ export type OrderItemSummary = {
 // Define the context shape
 interface OrderContextType {
     orders: Order[];
-    // We are now accepting the CartItem type, which is alias to CheckoutItem
-    addOrder: (newOrderItems: CheckoutItem[], grandTotal: number) => string; 
-    // New function needed for the Orders page to update status
-    updateOrderStatus: (orderId: string, status: Order['status']) => void; 
+    isLoading: boolean;
+    error: string | null;
+    fetchOrders: () => Promise<void>;
+    addOrder: (newOrderItems: CheckoutItem[], grandTotal: number, deliveryAddress?: Order['deliveryAddress'], paymentMethod?: string) => Promise<string | null>;
+    updateOrderStatus: (orderId: string, status: Order['status']) => Promise<boolean>;
+    cancelOrder: (orderId: string) => Promise<boolean>;
 }
 
 // 1. Create the Context
 const OrderContext = createContext<OrderContextType | undefined>(undefined);
 
-// --- MOCK INITIAL HISTORY DATA ---
-const INITIAL_ORDERS: Order[] = [
-    {
-        id: "ORD-2023005",
-        date: "12/9/2023",
-        status: "Delivered",
-        total: 350.00,
-        items: [{name: "Cheese Burger", quantity: 1, price: 150}, {name: "Milk Tea", quantity: 2, price: 100}],
-        icon: "truck",
-        color: "#28A745", // Green (Delivered)
-    },
-    {
-        id: "ORD-2023004",
-        date: "11/28/2023",
-        status: "Delivered",
-        total: 220.00,
-        items: [{name: "Chicken Kebab", quantity: 1, price: 220}],
-        icon: "truck",
-        color: "#28A745",
-    },
-];
-// -----------------------------------------------------------------
-
 // 2. Create the Provider Component
 export const OrderProvider = ({ children }: { children: ReactNode }) => {
-    const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
+    const [orders, setOrders] = useState<Order[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    // Function to generate a unique ID
-    const generateOrderId = () => {
-        const date = new Date();
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        const uniqueNum = Math.floor(Math.random() * 900) + 100; 
-        return `ORD-${year}${month}${day}-${uniqueNum}`;
+    // Helper to get auth token
+    const getToken = async () => {
+        return await AsyncStorage.getItem('token');
     };
 
+    // Fetch all orders for the user
+    const fetchOrders = useCallback(async () => {
+        setIsLoading(true);
+        setError(null);
+        
+        try {
+            const token = await getToken();
+            if (!token) {
+                setOrders([]);
+                return;
+            }
+
+            const response = await fetch(`${API_URL}/api/orders`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.message || 'Failed to fetch orders');
+            }
+
+            setOrders(data.orders || []);
+        } catch (err: any) {
+            console.error('Error fetching orders:', err.message);
+            setError(err.message);
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    // Fetch orders on mount
+    useEffect(() => {
+        fetchOrders();
+    }, [fetchOrders]);
+
     /**
-     * Adds a new order to the list upon successful checkout.
+     * Adds a new order to the database
      */
-    const addOrder = (newOrderItems: CheckoutItem[], grandTotal: number) => {
-        const newOrderId = generateOrderId();
-        
-        // Map the detailed checkout items to the simplified order summary format
-        const summaryItems: OrderItemSummary[] = newOrderItems.map(item => ({
-            name: item.name,
-            quantity: item.quantity,
-            price: item.price,
-        }));
-        
-        const now = new Date();
-        const formattedDate = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
+    const addOrder = async (
+        newOrderItems: CheckoutItem[], 
+        grandTotal: number,
+        deliveryAddress?: Order['deliveryAddress'],
+        paymentMethod?: string
+    ): Promise<string | null> => {
+        setIsLoading(true);
+        setError(null);
 
-        const newOrder: Order = {
-            id: newOrderId,
-            date: formattedDate,
-            status: 'Delivering', // Newly placed orders start as Delivering
-            total: grandTotal,
-            items: summaryItems,
-            icon: "cogs", // Orange/active icon
-            color: "#DA7807", 
-        };
+        try {
+            const token = await getToken();
+            if (!token) {
+                throw new Error('Please login to place an order');
+            }
 
-        // Prepend the new order to the list (so it shows up first)
-        setOrders(prevOrders => [newOrder, ...prevOrders]);
-        
-        return newOrderId;
+            const items = newOrderItems.map(item => ({
+                name: item.name,
+                quantity: item.quantity,
+                price: item.price
+            }));
+
+            const response = await fetch(`${API_URL}/api/orders`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    items,
+                    total: grandTotal,
+                    deliveryAddress,
+                    paymentMethod
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.message || 'Failed to place order');
+            }
+
+            // Add the new order to the local state
+            setOrders(prevOrders => [data.order, ...prevOrders]);
+            
+            return data.order.id;
+        } catch (err: any) {
+            console.error('Error creating order:', err.message);
+            setError(err.message);
+            return null;
+        } finally {
+            setIsLoading(false);
+        }
     };
     
     /**
-     * Updates the status of an existing order. Useful for simulating 'Delivered'.
+     * Updates the status of an existing order
      */
-    const updateOrderStatus = (orderId: string, newStatus: Order['status']) => {
-        setOrders(prevOrders => 
-            prevOrders.map(order => {
-                if (order.id === orderId) {
-                    let icon = order.icon;
-                    let color = order.color;
-                    
-                    if (newStatus === 'Delivered') {
-                        icon = 'truck';
-                        color = '#28A745'; // Green
-                    } else if (newStatus === 'Cancelled') {
-                        icon = 'times-circle';
-                        color = '#D9534F'; // Red
-                    }
+    const updateOrderStatus = async (orderId: string, newStatus: Order['status']): Promise<boolean> => {
+        setIsLoading(true);
+        setError(null);
 
-                    return { ...order, status: newStatus, icon, color };
-                }
-                return order;
-            })
-        );
+        try {
+            const token = await getToken();
+            if (!token) {
+                throw new Error('Please login to update order');
+            }
+
+            const response = await fetch(`${API_URL}/api/orders/${orderId}`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ status: newStatus })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.message || 'Failed to update order');
+            }
+
+            // Update local state
+            setOrders(prevOrders => 
+                prevOrders.map(order => 
+                    order.id === orderId ? { ...order, ...data.order } : order
+                )
+            );
+
+            return true;
+        } catch (err: any) {
+            console.error('Error updating order:', err.message);
+            setError(err.message);
+            return false;
+        } finally {
+            setIsLoading(false);
+        }
     };
 
+    /**
+     * Cancels an order (soft delete)
+     */
+    const cancelOrder = async (orderId: string): Promise<boolean> => {
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            const token = await getToken();
+            if (!token) {
+                throw new Error('Please login to cancel order');
+            }
+
+            const response = await fetch(`${API_URL}/api/orders/${orderId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.message || 'Failed to cancel order');
+            }
+
+            // Update local state
+            setOrders(prevOrders => 
+                prevOrders.map(order => 
+                    order.id === orderId ? { ...order, ...data.order } : order
+                )
+            );
+
+            return true;
+        } catch (err: any) {
+            console.error('Error cancelling order:', err.message);
+            setError(err.message);
+            return false;
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     return (
-        <OrderContext.Provider value={{ orders, addOrder, updateOrderStatus }}>
+        <OrderContext.Provider value={{ 
+            orders, 
+            isLoading, 
+            error, 
+            fetchOrders, 
+            addOrder, 
+            updateOrderStatus,
+            cancelOrder 
+        }}>
             {children}
         </OrderContext.Provider>
     );

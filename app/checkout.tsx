@@ -51,7 +51,7 @@ export default function CheckoutScreen() {
 
     // --- 2. Handlers ---
     
-    const handlePlaceOrder = () => {
+    const handlePlaceOrder = async () => {
         if (orderItems.length === 0) {
             Alert.alert("Error", "No items to place an order.", [
                 { text: "Go to Menu", onPress: () => router.replace('/food') }
@@ -61,7 +61,12 @@ export default function CheckoutScreen() {
 
         // ⭐️ STEP 1: Record the new order in the Order Context
         // This generates a unique ID and saves the order to the state
-        const newOrderId = addOrder(orderItems, grandTotal);
+        const newOrderId = await addOrder(orderItems, grandTotal);
+
+        if (!newOrderId) {
+            Alert.alert("Error", "Failed to place order. Please try again.");
+            return;
+        }
 
         if (!isBuyNowFlow) {
             clearCart(); 
