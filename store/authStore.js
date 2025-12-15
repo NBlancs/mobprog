@@ -89,7 +89,7 @@ export const useAuthStore = create((set) => ({
         console.log("Login error:", error.message);
         return { success: false, error: error.message };
     }
-}
+},
     
     
     
@@ -98,19 +98,15 @@ export const useAuthStore = create((set) => ({
     
     
     
-    
-    
-    
-    // updateUser: (updates) => {
-       // set((state) => {
-          //  const newUser = { ...state.user, ...updates };
+    // --- STORE METHOD 4: updateUser ---
+    updateUser: (updates) => {
+        set((state) => {
+            const newUser = { ...state.user, ...updates };
 
             // Store the updated user object in AsyncStorage
-           // AsyncStorage.setItem("user", JSON.stringify(newUser)).catch(console.error);
+            AsyncStorage.setItem("user", JSON.stringify(newUser)).catch(console.error);
 
-           // return { user: newUser };
-       // });
-    //},
-    
-    
+            return { user: newUser };
+        });
+    },
 }));
